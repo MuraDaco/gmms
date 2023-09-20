@@ -1292,6 +1292,199 @@ function func_repo_parent_module {
     echo_chk_clrd 1 33 "Selected: $module_parent_sel"
 }
 
+
+function func_display_licensed_dir {
+
+    toplevel=$(func_module_path_abs.sh "$module_parent_sel")
+    #cat "$toplevel/LICENSED_CODE" | grep -v "^#" | grep -v "^!"
+    list_file=
+    echo "--------------------"
+    echo "Involved directories:"
+    while IFS= read -r item; do
+        echo "$toplevel/$item"
+        list_file=$(
+            echo $list_file
+            find $toplevel/$item -type f '(' -name "CMakeLists.txt" -o -name "*.cmake" -o -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.hpp" ')'
+        )
+    done < <(cat "$toplevel/LICENSED_CODE" | grep -v "^#" | grep -v "^!" | grep -v "^ " | grep -v "^$")
+    echo "--------------------"
+
+    list_dir_exclude=$(cat "$toplevel/LICENSED_CODE" | grep "^!")
+
+    for item_dir in ${list_dir_exclude[@]}
+    do
+        list_file=$(
+            for item in ${list_file[@]}
+            do
+                echo "$item" | grep -v "${item_dir#*!}"
+                #echo "$item"
+            done
+        )
+    done
+
+}
+
+function add_or_not   {
+    echo_chk_clrd 1 31 "Do you want to add license to current file \"$1\"?"
+    list_values=$( 
+        echo "No"
+        echo "Yes"
+        echo "None"
+        echo "All"
+    )
+
+    selecting_dash_option              "add_sel"
+    #add_choice_sel=${add_sel%:*}
+    echo_chk_clrd 1 33 "Selected: $add_sel"
+
+}
+	
+function del_or_not   {
+    echo_chk_clrd 1 31 "Do you want to delete license to current file \"$1\"?"
+    list_values=$( 
+        echo "No"
+        echo "Yes"
+        echo "None"
+        echo "All"
+    )
+
+    selecting_dash_option              "del_sel"
+    #del_choice_sel=${del_sel%:*}
+    echo_chk_clrd 1 33 "Selected: $del_sel"
+
+}
+
+function func_display_licensed_files    {
+
+    comment="//  "
+    header_license_code=()
+    while IFS= read -r item; do
+        header_license_code+=("$comment$item")
+    done < <(cat $toplevel/LICENSE_HEADER)
+
+    comment="#   "
+    header_license_cmake=()
+    while IFS= read -r item; do
+        header_license_cmake+=("$comment$item")
+    done < <(cat $toplevel/LICENSE_HEADER)
+
+    line_number_license_header=$(wc -l < "$toplevel/LICENSE_HEADER")
+
+    echo "----- "
+    for item in ${list_file[@]}
+    do
+        file_licence=0
+        file_name="$(basename $item)"
+        head -6 "$item" | tail -3 | grep "Copyright (C) (2023) Marco Dau" && {
+            echo "file --- \"$item\""
+            file_licence=1
+            {
+                [ "None" != "$del_sel" ] &&
+                [ "All"  != "$del_sel" ]
+            } && {
+                del_or_not "$file_name"
+            } || true
+        } || {
+            echo "file +++ \"$item\""
+            {
+                [ "None" != "$add_sel" ] &&
+                [ "All"  != "$add_sel" ]
+            } && {
+                add_or_not "$file_name"
+            } || true
+        }
+
+        [ $file_licence -eq 1 ] && {
+            {
+                [ "Yes" = "$del_sel" ] ||
+                [ "All" = "$del_sel" ]
+            } && {
+                license_del $item
+                echo "Deleted"
+            } || {
+                echo "Nothing done"
+            }
+        } || {
+            {
+                [ "Yes" = "$add_sel" ] ||
+                [ "All" = "$add_sel" ]
+            } && {
+                license_add $item
+                echo "Added"
+            } || {
+                echo "Nothing done"
+            }
+        }
+        echo "~~~~~~~~~~~~~~~~~"
+
+    done
+    echo "----- "
+
+}
+
+function license_del    {
+    file_name=$toplevel/$(basename "$1")
+
+    line_number=$(wc -l < "$1")
+
+    # check the end of file
+    last_char_of_file=$(tail -1 < $1 | tail -c 1)
+    [ "$last_char_of_file" ] && ((line_number++))
+    # [ "$last_char_of_file" ] && echo "Line with EOF" || echo "Line WITHOUT EOF"
+
+    [ $line_number -ge $line_number_license_header ] && {
+
+        echo "Performing action ..."
+        [ $line_number -eq $line_number_license_header ] && {
+            touch "$toplevel/tmp_file"
+        } || {
+            line_number=$((line_number-$line_number_license_header))
+            tail -$line_number "$1" > "$toplevel/tmp_file"
+        }
+        mv "$toplevel/tmp_file" "$1"
+    } || {
+        echo_chk_clrd 1 31 "~v~v~v~v~v~v~v~v~"
+        echo_chk_clrd 1 31 "The processed file can't contains the right license ()"
+        echo_chk_clrd 1 31 "~v~v~v~v~v~v~v~v~"
+    }
+
+}
+
+function license_add    {
+    ## head -5 "$1"
+    ## file_licensed=()
+    ## while IFS= read -r item; do
+    ##     file_licensed+=("$item")
+    ## done < <(cat $1)
+    ## file_name="/Users/work/ObsiDataTest/"${1##/mpfw/}
+
+    file_name=$toplevel/$(basename "$1")
+
+    echo "Performing action ..."
+    extension=${1##*.}
+    case "$extension" in
+        "c"   | \
+        "cpp" | \
+        "h"   | \
+        "hpp")
+            for row_header in "${header_license_code[@]}"
+            do
+                echo "$row_header" >> "$toplevel/tmp_file"
+            done
+            ;;
+        "cmake" | \
+        "txt")
+            for row_header in "${header_license_cmake[@]}"
+            do
+                echo "$row_header" >> "$toplevel/tmp_file"
+            done
+            ;;
+    esac
+    cat "$1" >> "$toplevel/tmp_file"
+    mv "$toplevel/tmp_file" "$1"
+}
+
+
 function func_repogroup_all {
     echo_chk_clrd 1 32 "2. What kind of repo does the module belong to?"
     list_values=$(git config -f "$PATH_REPO_MAIN_CONF_STORAGES" --get-regexp --name-only repogroup | grep "^repogroup." | cut -d. -f2 | uniq )
